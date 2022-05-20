@@ -1,6 +1,7 @@
 import argparse
+import itertools
 import time
-from typing import Tuple
+from typing import Any, List, Tuple
 
 import pandas as pd
 import torch
@@ -19,7 +20,9 @@ def warmup(m: nn.Module, inputs: torch.Tensor, N: int = 10) -> None:
 
 
 @torch.inference_mode()
-def measure_forward_inference(m: nn.Module, inputs: torch.Tensor, N: int = 100) -> float:
+def measure_forward_inference(
+    m: nn.Module, inputs: torch.Tensor, N: int = 100
+) -> float:
     m.eval()
     forward_time = 0
     for _ in range(N):
@@ -30,7 +33,9 @@ def measure_forward_inference(m: nn.Module, inputs: torch.Tensor, N: int = 100) 
     return forward_time / N
 
 
-def measure_forward_backward_training(m: nn.Module, inputs: torch.Tensor, N: int = 100) -> Tuple[float, float]:
+def measure_forward_backward_training(
+    m: nn.Module, inputs: torch.Tensor, N: int = 100
+) -> Tuple[float, float]:
     m.train()
     forward_time = 0
     backward_time = 0
@@ -38,7 +43,7 @@ def measure_forward_backward_training(m: nn.Module, inputs: torch.Tensor, N: int
         time0 = time.time()
         outputs = m(inputs)
         forward_time += time.time() - time0
-        
+
         loss = outputs.abs().mean()
         time0 = time.time()
         loss.backward()
@@ -58,6 +63,18 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def format_data(data: List[List[Any]], columns: List[str], batch_sizes: List[int]):
+    df = pd.DataFrame(data, columns=columns)
+    df = df.set_index(["device", "batch size"]).sort_index().T
+    df[[("speedup", b) for b in batch_sizes]] = df["cpu"] / df["mps"]
+    df = df.T.unstack().T
+
+    df.columns.name = None
+    new_index = [(x, f"batch {b}") for x, b in df.index]
+    df.index = pd.MultiIndex.from_tuples(new_index)
+    return df
+
+
 def main():
     args = get_parser().parse_args()
     model_name = args.model_name
@@ -66,42 +83,52 @@ def main():
     N = args.N
     jit = args.jit
 
-    input_shape = (batch_size, 3, img_size, img_size)
-
     assert hasattr(torchvision.models, model_name)
     m: nn.Module = getattr(torchvision.models, model_name)()
     m.eval()
     if jit:
         m = torch.jit.script(m)
-    
+
     print(f"Image size: {img_size}, {img_size}")
     print(f"Batch size: {batch_size}")
     print()
 
-    indexes = [
+    columns = [
+        "device",
+        "batch size",
         "Forward (inference)",
         "Forward (training)",
-        "Backward (training)"
+        "Backward (training)",
     ]
-    data_dict = {x: {} for x in indexes}
+    data = []
 
-    for device in ("cpu", "mps"):
+    devices = ("cpu", "mps")
+    batch_sizes = (1, 4, 16)
+    for device, batch_size in itertools.product(devices, batch_sizes):
+        print(f"Measuring device={device}, batch_size={batch_size}")
+
         m.to(device)
+        input_shape = (batch_size, 3, img_size, img_size)
         img = get_inputs(input_shape, device)
         warmup(m, img)
 
         forward_eval_time = measure_forward_inference(m, img, N=N)
-        forward_train_time, backward_train_time = measure_forward_backward_training(m, img, N=N)
+        forward_train_time, backward_train_time = measure_forward_backward_training(
+            m, img, N=N
+        )
 
-        data_dict[indexes[0]][device] = forward_eval_time
-        data_dict[indexes[1]][device] = forward_train_time
-        data_dict[indexes[2]][device] = backward_train_time
+        sample = [
+            device,
+            batch_size,
+            forward_eval_time,
+            forward_train_time,
+            backward_train_time,
+        ]
+        data.append(sample)
 
-    for x in data_dict.values():
-        x["speedup"] = x["cpu"] / x["mps"]
-
-
-    print(pd.DataFrame.from_dict(data_dict, orient="index").to_markdown())
+    df = format_data(data, columns, batch_sizes)
+    print(df)
+    print(df.to_html())
 
 
 if __name__ == "__main__":

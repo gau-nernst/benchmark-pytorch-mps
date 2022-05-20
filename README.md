@@ -7,29 +7,76 @@
 - Model: torchvision's ResNet-50
 - Image size: 224 x 224
 
-Batch size 1
-
-|                     |       cpu |       mps |   speedup |
-|:--------------------|----------:|----------:|----------:|
-| Forward (inference) | 0.0357982 | 0.0202892 |  1.76439  |
-| Forward (training)  | 0.0388275 | 0.0580117 |  0.669303 |
-| Backward (training) | 0.0756178 | 0.058872  |  1.28444  |
-
-Batch size 4
-
-|                     |      cpu |       mps |   speedup |
-|:--------------------|---------:|----------:|----------:|
-| Forward (inference) | 0.1357   | 0.0509956 |   2.66101 |
-| Forward (training)  | 0.130575 | 0.127025  |   1.02795 |
-| Backward (training) | 0.29858  | 0.109849  |   2.7181  |
-
-Batch size 16
-
-|                     |      cpu |      mps |   speedup |
-|:--------------------|---------:|---------:|----------:|
-| Forward (inference) | 0.450937 | 0.176198 |   2.55926 |
-| Forward (training)  | 0.513482 | 0.396306 |   1.29567 |
-| Backward (training) | 1.01558  | 0.310709 |   3.26858 |
+<table>
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th></th>
+      <th>cpu</th>
+      <th>mps</th>
+      <th>speedup</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th rowspan="3" valign="top">Forward (inference)</th>
+      <th>batch 1</th>
+      <td>0.019279</td>
+      <td>0.009077</td>
+      <td>2.124094</td>
+    </tr>
+    <tr>
+      <th>batch 4</th>
+      <td>0.061646</td>
+      <td>0.017558</td>
+      <td>3.510889</td>
+    </tr>
+    <tr>
+      <th>batch 16</th>
+      <td>0.236246</td>
+      <td>0.051581</td>
+      <td>4.580057</td>
+    </tr>
+    <tr>
+      <th rowspan="3" valign="top">Forward (training)</th>
+      <th>batch 1</th>
+      <td>0.018578</td>
+      <td>0.029572</td>
+      <td>0.628213</td>
+    </tr>
+    <tr>
+      <th>batch 4</th>
+      <td>0.067474</td>
+      <td>0.063275</td>
+      <td>1.066354</td>
+    </tr>
+    <tr>
+      <th>batch 16</th>
+      <td>0.237479</td>
+      <td>0.179594</td>
+      <td>1.322313</td>
+    </tr>
+    <tr>
+      <th rowspan="3" valign="top">Backward (training)</th>
+      <th>batch 1</th>
+      <td>0.035397</td>
+      <td>0.020894</td>
+      <td>1.694124</td>
+    </tr>
+    <tr>
+      <th>batch 4</th>
+      <td>0.150062</td>
+      <td>0.033974</td>
+      <td>4.416930</td>
+    </tr>
+    <tr>
+      <th>batch 16</th>
+      <td>0.447114</td>
+      <td>0.079660</td>
+      <td>5.612775</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Environment setup
 
