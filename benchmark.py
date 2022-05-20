@@ -56,7 +56,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="resnet50")
     parser.add_argument("--img_size", type=int, default=224)
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--batch_sizes", default="1,4,16")
     parser.add_argument("--N", type=int, default=100)
     parser.add_argument("--jit", action="store_true")
 
@@ -78,9 +78,9 @@ def format_data(data: List[List[Any]], columns: List[str], batch_sizes: List[int
 def main():
     args = get_parser().parse_args()
     model_name = args.model_name
-    batch_size = args.batch_size
     img_size = args.img_size
     N = args.N
+    batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
     jit = args.jit
 
     assert hasattr(torchvision.models, model_name)
@@ -90,7 +90,6 @@ def main():
         m = torch.jit.script(m)
 
     print(f"Image size: {img_size}, {img_size}")
-    print(f"Batch size: {batch_size}")
     print()
 
     columns = [
@@ -103,7 +102,6 @@ def main():
     data = []
 
     devices = ("cpu", "mps")
-    batch_sizes = (1, 4, 16)
     for device, batch_size in itertools.product(devices, batch_sizes):
         print(f"Measuring device={device}, batch_size={batch_size}")
 
