@@ -1,6 +1,7 @@
 import argparse
 import itertools
 import logging
+import os
 import time
 from typing import Any, List, Tuple
 
@@ -10,10 +11,14 @@ import torchvision
 from torch import nn
 from transformers import AutoConfig, AutoModel
 
+_log_level = os.environ.get("LOG_LEVEL")
+if _log_level is not None:
+    logging.basicConfig(level=_log_level.upper())
+
 
 def get_model_and_inputs(
     model_name: str, jit: bool, batch_size: int, size: int, device: str
-) -> nn.Module:
+) -> Tuple[nn.Module, torch.Tensor]:
     if hasattr(torchvision.models, model_name):
         m: nn.Module = getattr(torchvision.models, model_name)()
         inputs = torch.randn((batch_size, 3, size, size), device=device)
@@ -38,9 +43,7 @@ def warmup(m: nn.Module, inputs: torch.Tensor, N: int = 10) -> None:
 
 
 @torch.inference_mode()
-def measure_forward_inference(
-    m: nn.Module, inputs: torch.Tensor, N: int = 100
-) -> float:
+def measure_eval(m: nn.Module, inputs: torch.Tensor, N: int = 100) -> float:
     m.eval()
     forward_time = 0
     for _ in range(N):
@@ -51,7 +54,7 @@ def measure_forward_inference(
     return N / forward_time
 
 
-def measure_forward_backward_training(
+def measure_train(
     m: nn.Module, inputs: torch.Tensor, N: int = 100
 ) -> Tuple[float, float]:
     m.train()
@@ -106,7 +109,10 @@ def main():
     batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
     jit = args.jit
 
-    print(f"Input size: {size}")
+    m, inputs = get_model_and_inputs(model_name, False, 1, size, "cpu")
+    num_params = sum(p.numel() for p in m.parameters())
+    print(f"Num params: {num_params}")
+    print(f"Input shape: {tuple(inputs.shape)}")
     print()
 
     columns = [
@@ -119,31 +125,30 @@ def main():
     data = []
 
     devices = ("cpu", "mps")
-    for device, batch_size in itertools.product(devices, batch_sizes):
+    for batch_size, device in itertools.product(batch_sizes, devices):
         print(f"Measuring device={device}, batch_size={batch_size}")
+
         m, inputs = get_model_and_inputs(model_name, jit, batch_size, size, device)
         m.to(device)
 
         try:
             warmup(m, inputs)
 
-            forward_eval_speed = measure_forward_inference(m, inputs, N=N)
-            forward_train_speed, backward_train_speed = measure_forward_backward_training(
-                m, inputs, N=N
-            )
+            f_eval_speed = measure_eval(m, inputs, N=N)
+            f_train_speed, b_train_speed = measure_train(m, inputs, N=N)
 
             sample = [
                 device,
                 batch_size,
-                forward_eval_speed,
-                forward_train_speed,
-                backward_train_speed,
+                f_eval_speed,
+                f_train_speed,
+                b_train_speed,
             ]
             data.append(sample)
 
             logging.info("Sleeping for 30s")
             time.sleep(30)
-        
+
         except Exception as e:
             logging.warning(f"Failed to measure. Exception={e}")
 
