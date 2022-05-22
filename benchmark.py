@@ -1,38 +1,71 @@
 import argparse
 import itertools
 import logging
-import os
+import sys
 import time
 from typing import Any, List, Tuple
 
 import pandas as pd
 import torch
 import torchvision
+import transformers
 from torch import nn
 from transformers import AutoConfig, AutoModel
 
-_log_level = os.environ.get("LOG_LEVEL")
-if _log_level is not None:
-    logging.basicConfig(level=_log_level.upper())
+logging.basicConfig(
+    level="INFO",
+    format="[%(asctime)s - %(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+
+class BertWrapper(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        config.output_hidden_states = True
+        self.model = AutoModel.from_config(config, add_pooling_layer=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(inputs_embeds=x).last_hidden_state[:, 0]
+
+
+def log_system_info() -> None:
+    logging.info(f"Python {sys.version}")
+    logging.info("Packages version:")
+    logging.info(f"  - torch={torch.__version__}")
+    logging.info(f"  - torchvision={torchvision.__version__}")
+    logging.info(f"  - transformers={transformers.__version__}")
+    logging.info("")
 
 
 def get_model_and_inputs(
-    model_name: str, jit: bool, batch_size: int, size: int, device: str
+    model_name: str, jit: bool, size: int
 ) -> Tuple[nn.Module, torch.Tensor]:
+
     if hasattr(torchvision.models, model_name):
-        m: nn.Module = getattr(torchvision.models, model_name)()
-        inputs = torch.randn((batch_size, 3, size, size), device=device)
+        m = getattr(torchvision.models, model_name)()
+        inputs = torch.randn((1, 3, size, size))
+        model_source = "torchvision"
+
+    elif model_name.startswith("bert"):
+        config = AutoConfig.from_pretrained(model_name)
+        m = BertWrapper(config)
+        inputs = torch.randn((1, size, config.hidden_size))
+        model_source = "Hugging Face"
+
     else:
-        try:
-            config = AutoConfig.from_pretrained(model_name)
-            m = AutoModel.from_config(config)
-            inputs = torch.randint(1000, size=(batch_size, size), device=device)
-        except Exception as e:
-            logging.warning(e)
+        raise ValueError(f"{model_name} is not supported")
 
     m.eval()
+    num_params = sum(p.numel() for p in m.parameters())
     if jit:
         m = torch.jit.script(m)
+
+    logging.info(f"Using {model_name} from {model_source}")
+    logging.info(f"  - Num params: {num_params}")
+    logging.info(f"  - Input shape: {tuple(inputs.shape)}")
+    logging.info("")
+
     return m, inputs
 
 
@@ -65,8 +98,6 @@ def measure_train(
         outputs = m(inputs)
         forward_time += time.time() - time0
 
-        if hasattr(outputs, "pooler_output"):
-            outputs = outputs.pooler_output
         loss = outputs.abs().mean()
 
         time0 = time.time()
@@ -102,6 +133,8 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    log_system_info()
+
     args = get_parser().parse_args()
     model_name = args.model_name
     size = args.size
@@ -109,11 +142,7 @@ def main():
     batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
     jit = args.jit
 
-    m, inputs = get_model_and_inputs(model_name, False, 1, size, "cpu")
-    num_params = sum(p.numel() for p in m.parameters())
-    print(f"Num params: {num_params}")
-    print(f"Input shape: {tuple(inputs.shape)}")
-    print()
+    m, inputs = get_model_and_inputs(model_name, jit, size)
 
     columns = [
         "device",
@@ -124,40 +153,30 @@ def main():
     ]
     data = []
 
-    devices = ("cpu", "mps")
+    devices = ("mps", "cpu")
     for batch_size, device in itertools.product(batch_sizes, devices):
-        print(f"Measuring device={device}, batch_size={batch_size}")
-
-        m, inputs = get_model_and_inputs(model_name, jit, batch_size, size, device)
+        logging.info(f"Measuring device={device}, batch_size={batch_size}")
         m.to(device)
+        new_shape = (batch_size,) + inputs.shape[1:]
+        inputs_batch = inputs.expand(new_shape).to(device)
 
-        try:
-            warmup(m, inputs)
+        warmup(m, inputs_batch)
 
-            f_eval_speed = measure_eval(m, inputs, N=N)
-            f_train_speed, b_train_speed = measure_train(m, inputs, N=N)
+        f_eval_speed = measure_eval(m, inputs_batch, N=N)
+        f_train_speed, b_train_speed = measure_train(m, inputs_batch, N=N)
 
-            sample = [
-                device,
-                batch_size,
-                f_eval_speed,
-                f_train_speed,
-                b_train_speed,
-            ]
-            data.append(sample)
-
-            logging.info("Sleeping for 30s")
-            time.sleep(30)
-
-        except Exception as e:
-            logging.warning(f"Failed to measure. Exception={e}")
-
-        del m
-        del inputs
+        sample = [
+            device,
+            batch_size,
+            f_eval_speed,
+            f_train_speed,
+            b_train_speed,
+        ]
+        data.append(sample)
 
     df = format_data(data, columns, batch_sizes)
-    print(df)
-    print(df.to_html())
+    logging.info("Results in HTML table format\n" + df.to_html())
+    logging.info("\n" + str(df))
 
 
 if __name__ == "__main__":
