@@ -1,6 +1,7 @@
 import argparse
 import itertools
 import logging
+import subprocess
 import sys
 import time
 from typing import Any, List, Tuple
@@ -29,9 +30,16 @@ class BertWrapper(nn.Module):
         return self.model(x).last_hidden_state[:, 0]
 
 
+def get_git_commit_hash():
+    cmd = "git rev-parse --short HEAD"
+    proc = subprocess.run(cmd, shell=True, capture_output=True)
+    return proc.stdout.decode().rstrip()
+
+
 def log_system_info() -> None:
     logging.info(f"Python {sys.version}")
     logging.info("Packages version:")
+    logging.info(f"  - Git commit: {get_git_commit_hash()}")
     logging.info(f"  - torch={torch.__version__}")
     logging.info(f"  - torchvision={torchvision.__version__}")
     logging.info(f"  - transformers={transformers.__version__}")
