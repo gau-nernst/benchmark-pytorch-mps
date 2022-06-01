@@ -26,7 +26,7 @@ class BertWrapper(nn.Module):
         self.model = AutoModel.from_config(config, add_pooling_layer=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(inputs_embeds=x).last_hidden_state[:, 0]
+        return self.model(x).last_hidden_state[:, 0]
 
 
 def log_system_info() -> None:
@@ -50,7 +50,7 @@ def get_model_and_inputs(
     elif model_name.startswith("bert"):
         config = AutoConfig.from_pretrained(model_name)
         m = BertWrapper(config)
-        inputs = torch.randn((1, size, config.hidden_size))
+        inputs = torch.randint(config.vocab_size, size=(1, size))
         model_source = "Hugging Face"
 
     else:
