@@ -126,6 +126,7 @@ def format_data(data: List[List[Any]], columns: List[str], batch_sizes: List[int
     df.columns.name = None
     new_index = [(x, f"batch {b}") for x, b in df.index]
     df.index = pd.MultiIndex.from_tuples(new_index)
+    df = df.round(3)
     return df
 
 
