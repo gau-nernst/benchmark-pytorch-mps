@@ -11,6 +11,8 @@ Some models can't be run on `mps` device due to unsupported ops e.g. Swin transf
 
 ## Environment setup
 
+Starting from PyTorch 1.12 and torchvision 0.13, there are official binaries for Mac M1.
+
 You might need to update to macOS >= 12.3
 
 Install [miniforge](https://github.com/conda-forge/miniforge), then run the below
@@ -19,13 +21,7 @@ Install [miniforge](https://github.com/conda-forge/miniforge), then run the belo
 # install PyTorch nightly
 conda create -n pytorch python=3.8
 conda activate pytorch
-conda install pytorch -c pytorch-nightly
-
-# build torchvision from source
-git clone https://github.com/pytorch/vision
-cd vision
-MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py install
-
+conda install pytorch torchvision -c pytorch
 conda install transformers      # for BERT
 conda install pandas tabulate   # to print pretty tables
 ```
